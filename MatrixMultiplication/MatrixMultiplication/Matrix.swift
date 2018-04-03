@@ -1,6 +1,7 @@
 
 import Foundation
 import Metal
+import Accelerate
 
 protocol Matrix {
     var columns: Int { get }
@@ -59,6 +60,17 @@ class CPUMatrix : Matrix {
                 setElementAt(column: i, row: j, value: sum)
             }
         }
+    }
+    
+    func accelerateBecomeProduct(_ A: CPUMatrix, _ B: CPUMatrix) {
+        cblas_sgemm(CblasColMajor,
+                    CblasNoTrans, CblasNoTrans,
+                    Int32(A.rows), Int32(B.columns), Int32(A.columns),
+                    1.0,
+                    A.elements, Int32(A.rows),
+                    B.elements, Int32(B.rows),
+                    1.0,
+                    self.elements, Int32(self.rows))
     }
 }
 

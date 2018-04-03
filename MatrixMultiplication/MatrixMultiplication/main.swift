@@ -38,14 +38,12 @@ class MatrixMultiplier {
         matrixB = CPUMatrix(columns: OuterDim, rows: InnerDim)
         matrixB.randomize()
         matrixC = CPUMatrix(columns: OuterDim, rows: OuterDim)
-        matrixC.fill(value: 0)
         
         matrixD = GPUMatrix(columns: InnerDim, rows: OuterDim, device: device)
         matrixD.fill(matrix: matrixA)
         matrixE = GPUMatrix(columns: OuterDim, rows: InnerDim, device: device)
         matrixE.fill(matrix: matrixB)
         matrixF = GPUMatrix(columns: OuterDim, rows: OuterDim, device: device)
-        matrixF.fill(value: 0)
     }
     
     func makeComputePipeline() -> MTLComputePipelineState? {
@@ -66,6 +64,8 @@ class MatrixMultiplier {
     }
     
     func runGPUMultiply() {
+        matrixF.fill(value: 0)
+
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
             fatalError("Unable to create command buffer")
         }
@@ -91,16 +91,29 @@ class MatrixMultiplier {
     }
     
     func runCPUMultiply() {
+        matrixC.fill(value: 0)
+
         let start = Date()
         
         matrixC.becomeProduct(matrixA, matrixB)
 
         let duration = Date().timeIntervalSince(start)
-        print(String(format: "CPU execution time: %0.2fms", duration * 1000))
+        print(String(format: "CPU (naive) execution time: %0.2fms", duration * 1000))
     }
     
+    func runCPUAcceleratedMultiply() {
+        matrixC.fill(value: 0)
+
+        let start = Date()
+        
+        matrixC.accelerateBecomeProduct(matrixA, matrixB)
+        
+        let duration = Date().timeIntervalSince(start)
+        print(String(format: "CPU (BLAS) execution time: %0.2fms", duration * 1000))
+    }
+
     func verifyResults() {
-        let tolerance: Float = 0.00005
+        let tolerance: Float = 1e-4
         let gpuResults = matrixF.elements.contents().assumingMemoryBound(to: Float.self)
         for i in 0..<(OuterDim * OuterDim) {
             let cpuResult = matrixC.elements[i]
@@ -115,6 +128,9 @@ class MatrixMultiplier {
 
 if let multiplier = MatrixMultiplier() {
     multiplier.runCPUMultiply()
+    multiplier.runCPUAcceleratedMultiply()
+    multiplier.runCPUAcceleratedMultiply()
+    multiplier.runGPUMultiply()
     multiplier.runGPUMultiply()
     multiplier.verifyResults()
 }

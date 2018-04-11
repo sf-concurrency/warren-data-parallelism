@@ -1,3 +1,5 @@
+<meta charset="utf-8">
+
 # Notes on data-parallel programming with Metal
 
 (Corresponds to Chapter 7 of _Seven Concurrency Models in Seven Weeks_)
@@ -15,8 +17,11 @@ Butcher notes that this is a simplification, but it is indeed a good rule of thu
 The basic steps of writing a data-parallel program are as follows:
 
 1. Create a Metal device (`MTLDevice`). This is the programmatic interface to the GPU
-1. Create a command queue (`MTLCommandQueue), which manages lists of commands ("command buffers" to be executed by the GPU
-1. Create a compute pipeline state object (`MTLComputePipelineState`) from your kernel function source (this entails creating a Metal library (`MTLLibrary`) and a Metal function object (`MTLFunction`) for each compute pipeline).
+1. Create a command queue (`MTLCommandQueue`), which manages lists of commands ("command buffers" to be executed by the GPU
+1. Create a compute pipeline state object (`MTLComputePipelineState`)
+   from your kernel function source (this entails creating a Metal
+   library (`MTLLibrary`) and a Metal function object (`MTLFunction`)
+   for each compute pipeline).
 1. Create buffers that store the data to be operated on by the kernel function
 1. For each computation or frame:
 	 1. Create a command buffer, into which commands will be written (_encoded_)
@@ -29,6 +34,7 @@ The basic steps of writing a data-parallel program are as follows:
 
 Kernel function:
 
+```
 	kernel void multiply_arrays(device float *inputA [[buffer(0)]],
 	                            device float *inputB [[buffer(1)]],
 	                            device float *output [[buffer(2)]],
@@ -37,15 +43,20 @@ Kernel function:
 	    output[tpig] = inputA[tpig] * inputB[tpig];
 	}
 
+```
+
 Note that we attribute one of the parameters with `thread_position_in_grid`; each time the kernel is invoked (once per grid item), this parameter tells is "where" we are in the grid, which in this case just means the index of the array we're currently operating on.
 
 Dispatching the work:
 
+```
     let threadExecutionWidth = computePipeline.threadExecutionWidth
     let threadsPerGrid = MTLSizeMake(ArraySize, 1, 1)
     let threadsPerThreadgroup = MTLSizeMake(min(threadExecutionWidth, ArraySize), 1, 1)
     let threadgroupsPerGrid = MTLSizeMake(threadsPerGrid.width / threadsPerThreadgroup.width, 1, 1)
     commandEncoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
+```
+
 
 Here, we're manually computing how we want the grid to be broken up. The product of `threadsPerThreadgroup` and `threadgroupsPerGrid` determines how big the grid is. We select `threadsPerThreadgroup` to be a small multiple of the `threadExecutionWidth` of the pipeline when possible, since this is the number of simultaneous kernel invocations that can be launched efficiently on the GPU. The number of threadgroups to be launched is the total number of kernel invocations in the grid (i.e., number of array elements to be multiplied), divided by the threadgroup size.
 
@@ -58,6 +69,7 @@ Here, we're manually computing how we want the grid to be broken up. The product
 
 Kernel function:
 
+```
     kernel void multiply_matrices(constant float *inputA    [[buffer(0)]],
                                   constant float *inputB    [[buffer(1)]],
                                   device float *output      [[buffer(2)]],
@@ -74,14 +86,18 @@ Kernel function:
         }
         output[i * dims.outputRows + j] = sum;
     }
+```
+
 
 This function effectively implements a "dot product" between one row of the left matrix and one column of the right matrix. The resulting sum is the written to the appropriate element of the result matrix. Note that, this time, we have a 2-D `thread_position_in_grid` parameter; this is the output element index in (column, row) order. This kernel function will be invoked once per result element. 
 
 Dispatching the matrix multiplication:
 
+```
     let threadsPerGrid = MTLSizeMake(OuterDim, OuterDim, 1) // size of result matrix
     let threadsPerThreadgroup = MTLSizeMake(16, 16, 1)
     commandEncoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
+```
 
 Here, we somewhat arbitrarily select a threadgroup size of 256 (16x16) and let Metal figure out exactly how split up the grid. This takes advantage of a new API in iOS 11/macOS 10.13: `dispatchThreads(_, threadsPerThreadgroup:)`. 
 
@@ -98,3 +114,5 @@ We skirt this by using a facility provided by Metal: the `setVertexBytes(_, leng
 ### Screenshot
 
 ![](screenshot.png)
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

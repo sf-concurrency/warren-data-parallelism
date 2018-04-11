@@ -6,16 +6,19 @@ using namespace metal;
 
 constant float amplitude = 0.1;
 constant float frequency = 5;
-constant float speed = 0.5;
-constant float wavePacket = 2;
-constant float decayRate = 1;
+constant float decayRate = 0.25;
+constant float packet = 15;
+constant float speed = 2;
 
-struct SimulationData {
-    float4 centersAndTimes[MAX_RIPPLES]; // center.x, center.y, startTime, now
+struct Ripple {
+    float centerX;
+    float centerZ;
+    float startTime;
+    float currentTime;
 };
 
 kernel void ripple(device packed_float3 *vertices [[buffer(0)]],
-                   constant SimulationData &data  [[buffer(1)]],
+                   constant Ripple *ripples       [[buffer(1)]],
                    uint2 tpig                     [[thread_position_in_grid]],
                    uint2 gridSize                 [[threads_per_grid]])
 {
@@ -27,13 +30,13 @@ kernel void ripple(device packed_float3 *vertices [[buffer(0)]],
     float z = v.z;
     
     for (int i = 0; i < MAX_RIPPLES; ++i) {
-        float dx = x - data.centersAndTimes[i][0];
-        float dz = z - data.centersAndTimes[i][1];
+        float dx = x - ripples[i].centerX;
+        float dz = z - ripples[i].centerZ;
         float d = sqrt(dx * dx + dz * dz);
-        float elapsed = data.centersAndTimes[i][3] - data.centersAndTimes[i][2];
-        float r = elapsed * speed;
+        float t = ripples[i].currentTime - ripples[i].startTime;
+        float r = t * speed;
         float delta = r - d;
-        y += amplitude * exp(-decayRate * r * r) * exp(-wavePacket * delta * delta) * cos(frequency * M_PI_F * delta);
+        y += amplitude * cos(2 * frequency * M_PI_F * delta) * exp(-decayRate * r * r) * exp(-packet * delta * delta);
     }
     vertices[vid][1] = y;
 }

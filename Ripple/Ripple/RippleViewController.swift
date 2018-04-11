@@ -10,8 +10,9 @@ class RippleViewController: NSViewController, MTKViewDelegate {
     var renderer: Renderer!
     var simulation: Simulation!
     var gridSize = MTLSizeMake(1, 1, 1)
-    var mesh: MTKMesh!
-    
+    var waterMesh: MTKMesh!
+    var groundTexture: MTLTexture!
+
     class func buildMesh(device: MTLDevice, gridSize:MTLSize, vertexDescriptor: MTLVertexDescriptor) -> MTKMesh? {
         let metalAllocator = MTKMeshBufferAllocator(device: device)
         
@@ -55,6 +56,22 @@ class RippleViewController: NSViewController, MTKViewDelegate {
         return mtlVertexDescriptor
     }
 
+    class func loadTexture(device: MTLDevice,
+                           textureName: String) throws -> MTLTexture {
+        let textureLoader = MTKTextureLoader(device: device)
+        
+        let textureLoaderOptions = [
+            MTKTextureLoader.Option.textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
+            MTKTextureLoader.Option.textureStorageMode: NSNumber(value: MTLStorageMode.`private`.rawValue)
+        ]
+        
+        return try textureLoader.newTexture(name: textureName,
+                                            scaleFactor: 1.0,
+                                            bundle: nil,
+                                            options: textureLoaderOptions)
+        
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
 
@@ -77,44 +94,51 @@ class RippleViewController: NSViewController, MTKViewDelegate {
         mtkView.depthStencilPixelFormat = .depth32Float_stencil8
         mtkView.colorPixelFormat = .bgra8Unorm_srgb
         mtkView.sampleCount = 1
-        mtkView.clearColor = MTLClearColor(red: 0, green: 0.2, blue: 1.0, alpha: 1.0)
+        mtkView.clearColor = MTLClearColor(red: 0, green: 0.01, blue: 0.04, alpha: 1.0)
 
         let vertexDescriptor = RippleViewController.buildVertexDescriptor()
-        
-        guard let newMesh = RippleViewController.buildMesh(device: device, gridSize: gridSize, vertexDescriptor: vertexDescriptor) else {
-            print("Mesh cannot be initialized")
-            return
-        }
-        
-        mesh = newMesh
 
-        guard let newRenderer = Renderer(device: device, vertexDescriptor: vertexDescriptor) else {
-            print("Renderer cannot be initialized")
-            return
+        waterMesh = RippleViewController.buildMesh(device: device, gridSize: gridSize, vertexDescriptor: vertexDescriptor)
+
+        do {
+            groundTexture = try RippleViewController.loadTexture(device: device, textureName: "cobblestone")
+        } catch {
+            print("Unable to load texture. Error info: \(error)")
         }
 
-        renderer = newRenderer
+        renderer = Renderer(device: device, vertexDescriptor: vertexDescriptor)
 
-        guard let newSimulation = Simulation(device: device, gridSize: gridSize) else {
-            print("Renderer cannot be initialized")
-            return
-        }
-        
-        simulation = newSimulation
+        simulation = Simulation(device: device, gridSize: gridSize)
         
         mtkView.delegate = self
         
         renderer.drawableSize = mtkView.drawableSize
+        
+        let dropInterval = 0.033
+        Timer.scheduledTimer(withTimeInterval: dropInterval, repeats: true) { _ in
+            self.addRippleCenter()
+        }
     }
 
     func draw(in view: MTKView) {
         let now = CACurrentMediaTime()
         if let commandBuffer = commandQueue.makeCommandBuffer() {
-            simulation.writeVertexPositions(to: mesh.vertexBuffers.first!.buffer,
+            simulation.writeVertexPositions(to: waterMesh.vertexBuffers.first!.buffer,
                                             gridDimensions: gridSize,
                                             time: now,
                                             commandBuffer: commandBuffer)
-            renderer.draw(mesh: mesh, in: self.view as! MTKView, commandBuffer: commandBuffer)
+            
+            if let renderPassDescriptor = view.currentRenderPassDescriptor {
+                if let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) {
+                    renderer.draw(mesh: waterMesh, texture: groundTexture, commandEncoder: renderEncoder)
+                    renderEncoder.endEncoding()
+                }
+            }
+            
+            if let drawable = view.currentDrawable {
+                commandBuffer.present(drawable)
+            }
+            
             commandBuffer.commit()
         }
     }
@@ -123,16 +147,17 @@ class RippleViewController: NSViewController, MTKViewDelegate {
         renderer.drawableSize = view.drawableSize
     }
     
-    func addRippleCenter(_ location: NSPoint) {
-        let loc = NSMakePoint(
-            CGFloat(location.x) / CGFloat(view.bounds.width) * 2 - 1,
-            -(CGFloat(location.y) / CGFloat(view.bounds.height) * 2 - 1))
+    func addRippleCenter() {
+        let loc = NSMakePoint(CGFloat(drand48() * 2 - 1),
+                              CGFloat(drand48() * 2 - 1))
         simulation.addRippleCenter(loc)
     }
     
+    override func mouseDown(with event: NSEvent) {
+        renderer.wireframe = true
+    }
+    
     override func mouseUp(with event: NSEvent) {
-        let windowLocation = event.locationInWindow
-        let location = view.convert(windowLocation, from: nil)
-        addRippleCenter(location)
+        renderer.wireframe = false
     }
 }

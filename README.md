@@ -97,4 +97,4 @@ We skirt this by using a facility provided by Metal: the `setVertexBytes(_, leng
 
 ### Screenshot
 
-![screenshot.png]()
+![](screenshot.png)
